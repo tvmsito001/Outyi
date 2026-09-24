@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recorder — utilitario de señal VST3</title>
+<meta name="description" content="Recorder: plugin VST3 de 64-bit que graba o transmite en vivo el audio de un canal, sin alterar la señal.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 fill=%22%2315161a%22/><circle cx=%2250%22 cy=%2250%22 r=%2226%22 fill=%22%23e0473f%22/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#101114;
+    --panel:#15161a;
+    --panel-2:#1c1d22;
+    --line:#2b2d34;
+    --text:#e8e8ea;
+    --text-dim:#8a8c94;
+    --accent:#e0473f;
+    --accent-dim:#6e2622;
+    --amber:#e8c547;
+    --green:#3ddc84;
+    --mono:'IBM Plex Mono', ui-monospace, monospace;
+    --sans:'IBM Plex Sans', system-ui, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:var(--sans);
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:inherit;}
+  .wrap{max-width:1040px;margin:0 auto;padding:0 28px;}
+
+  /* ---- Espina de señal: la línea vertical que recorre toda la página ---- */
+  .spine{
+    position:fixed;
+    top:0; bottom:0; left:50%;
+    transform:translateX(-500px);
+    width:2px;
+    background:var(--line);
+    z-index:0;
+  }
+  .spine-fill{
+    position:absolute;
+    top:0; left:0; width:100%;
+    height:0%;
+    background:var(--accent);
+    transition:height .08s linear;
+  }
+  @media (max-width:1080px){ .spine{ display:none; } }
+
+  section{position:relative; z-index:1;}
+
+  .node{
+    position:absolute;
+    left:-500px;
+    width:11px; height:11px;
+    border-radius:50%;
+    background:var(--bg);
+    border:2px solid var(--line);
+    transform:translate(-5px,-3px);
+  }
+  .node.lit{border-color:var(--accent);}
+  @media (max-width:1080px){ .node{display:none;} }
+
+  /* ---- Header / rail de referencia ---- */
+  header{
+    padding:20px 0;
+    border-bottom:1px solid var(--line);
+  }
+  .rail{
+    display:flex; justify-content:space-between; align-items:center;
+    font-family:var(--mono); font-size:12px; color:var(--text-dim);
+    letter-spacing:.02em;
+  }
+  .rail b{color:var(--text); font-weight:500;}
+
+  /* ---- Hero ---- */
+  .hero{padding:96px 0 64px;}
+  .tag{
+    font-family:var(--mono); font-size:12px; color:var(--accent);
+    border:1px solid var(--accent-dim);
+    display:inline-block; padding:3px 8px; border-radius:2px;
+    margin-bottom:22px;
+  }
+  h1{
+    font-family:var(--mono);
+    font-weight:600;
+    font-size:clamp(48px, 9vw, 92px);
+    line-height:0.98;
+    letter-spacing:-.01em;
+    margin:0 0 22px;
+  }
+  .lede{
+    font-size:19px;
+    max-width:560px;
+    color:#c7c8cd;
+    margin:0 0 36px;
+  }
+  .lede code{
+    font-family:var(--mono); font-size:.92em;
+    background:var(--panel-2); padding:.1em .35em; border-radius:3px;
+    color:var(--text);
+  }
+  .cta-row{display:flex; flex-wrap:wrap; gap:14px; align-items:center;}
+  .btn{
+    font-family:var(--mono); font-size:14px;
+    display:inline-flex; align-items:center; gap:10px;
+    padding:13px 20px;
+    border-radius:3px;
+    text-decoration:none;
+    border:1px solid transparent;
+  }
+  .btn-primary{background:var(--accent); color:#1a0d0c; font-weight:600;}
+  .btn-primary:hover{background:#ef5a51;}
+  .btn-ghost{border-color:var(--line); color:var(--text-dim);}
+  .btn-ghost:hover{color:var(--text); border-color:#454750;}
+  .meta{font-family:var(--mono); font-size:12px; color:var(--text-dim);}
+
+  /* ---- Mockup del plugin ---- */
+  .device{
+    margin-top:64px;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:6px;
+    width:100%;
+    max-width:420px;
+    padding:18px;
+  }
+  .device-label{
+    font-family:var(--mono); font-size:9px; letter-spacing:.08em;
+    color:var(--text-dim); text-transform:uppercase;
+    display:flex; justify-content:space-between;
+    margin-bottom:14px;
+  }
+  .d-modes{display:flex; gap:8px; margin-bottom:16px;}
+  .d-mode{
+    flex:1; text-align:center; font-family:var(--mono); font-size:12px;
+    padding:8px; border-radius:3px; background:var(--panel-2); color:var(--text-dim);
+  }
+  .d-mode.on{background:#3a3d47; color:var(--text);}
+  .d-top{display:flex; align-items:center; gap:14px; margin-bottom:18px;}
+  .d-rec{
+    font-family:var(--mono); font-weight:600; font-size:12px;
+    background:var(--accent-dim); color:#f2c7c3;
+    padding:14px 18px; border-radius:4px;
+  }
+  .d-time{font-family:var(--mono); font-size:24px; font-weight:600;}
+  .d-meters{display:flex; gap:4px; margin-left:auto;}
+  .d-meter{width:8px; height:40px; background:var(--panel-2); border-radius:2px; overflow:hidden; display:flex; align-items:flex-end;}
+  .d-meter i{display:block; width:100%; background:var(--green);}
+  .d-row{
+    font-family:var(--mono); font-size:11px; color:var(--text-dim);
+    display:flex; justify-content:space-between; margin:14px 0 6px;
+  }
+  .d-slider{height:5px; background:var(--panel-2); border-radius:3px; position:relative;}
+  .d-slider i{position:absolute; left:0; top:0; bottom:0; width:52%; background:var(--amber); border-radius:3px;}
+  .d-monitor{display:flex; gap:6px; margin-top:16px;}
+  .d-monitor span{
+    flex:1; text-align:center; font-family:var(--mono); font-size:10px;
+    padding:8px 4px; border-radius:3px; background:var(--panel-2); color:var(--text-dim);
+  }
+  .d-monitor span.active{background:var(--green); color:#0b1f14;}
+  .device-caption{
+    font-family:var(--mono); font-size:11px; color:var(--text-dim);
+    margin-top:10px;
+  }
+
+  /* ---- Secciones generales ---- */
+  .section{padding:72px 0;}
+  .section-head{
+    display:grid; grid-template-columns:120px 1fr; gap:24px;
+    margin-bottom:28px; align-items:baseline;
+  }
+  .section-num{font-family:var(--mono); color:var(--text-dim); font-size:13px;}
+  h2{
+    font-family:var(--mono); font-size:26px; font-weight:600; margin:0;
+  }
+  .prose{max-width:620px; color:#c7c8cd; font-size:16px;}
+  .prose + .prose{margin-top:12px;}
+
+  /* ---- Pasos ---- */
+  .steps{list-style:none; margin:0; padding:0; max-width:640px;}
+  .steps li{
+    display:grid; grid-template-columns:36px 1fr;
+    gap:16px; padding:18px 0; border-top:1px solid var(--line);
+  }
+  .steps li:last-child{border-bottom:1px solid var(--line);}
+  .steps .n{font-family:var(--mono); color:var(--accent); font-size:14px;}
+  .steps h3{margin:0 0 4px; font-size:16px; font-weight:600; font-family:var(--sans);}
+  .steps p{margin:0; color:var(--text-dim); font-size:14.5px;}
+
+  /* ---- Requisitos ---- */
+  .reqs{
+    border:1px solid var(--line); border-radius:6px;
+    padding:24px; max-width:640px; background:var(--panel);
+  }
+  .reqs ul{margin:0; padding:0; list-style:none;}
+  .reqs li{
+    display:flex; gap:12px; padding:10px 0; border-top:1px solid var(--line);
+    font-size:14.5px; color:#c7c8cd;
+  }
+  .reqs li:first-child{border-top:none;}
+  .reqs li b{color:var(--text); font-weight:500;}
+  .reqs a{color:var(--amber); text-decoration:underline; text-underline-offset:2px;}
+
+  /* ---- Descarga ---- */
+  .download{
+    border:1px solid var(--line); border-radius:6px;
+    padding:32px; max-width:640px;
+    background:linear-gradient(180deg, var(--panel), var(--panel-2));
+  }
+  .download .meta{margin-bottom:18px;}
+  .download-cta{display:flex; flex-wrap:wrap; gap:12px;}
+
+  footer{
+    border-top:1px solid var(--line);
+    padding:32px 0 60px;
+    font-family:var(--mono); font-size:12px; color:var(--text-dim);
+    display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;
+  }
+  footer a{text-decoration:underline; text-underline-offset:2px;}
+</style>
+</head>
+<body>
+
+<div class="spine"><div class="spine-fill" id="spineFill"></div></div>
+
+<header>
+  <div class="wrap rail">
+    <span><b>RECORDER</b> / signal utility</span>
+    <span>VST3 · 64-bit · Windows</span>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="wrap">
+    <div class="tag">UNIT 01 — SALIDA DE SEÑAL</div>
+    <h1>Recorder</h1>
+    <p class="lede">
+      Un plugin VST3 minimalista que saca una copia exacta del audio de
+      cualquier canal — a un archivo <code>.wav</code>, o en vivo hacia
+      otro programa como OBS — sin tocar lo que estás escuchando.
+    </p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="./downloads/Recorder-win64-vst3.zip" download>
+        Descargar Recorder.vst3
+      </a>
+      <a class="btn btn-ghost" href="#build">compilar desde el código fuente</a>
+    </div>
+    <div class="meta" style="margin-top:14px;">v1.0 · ~2 MB · sin instalador, se copia a tu carpeta VST3</div>
+
+    <div class="device">
+      <div class="device-label"><span>RECORDER</span><span>x64</span></div>
+      <div class="d-modes">
+        <div class="d-mode">Archivo</div>
+        <div class="d-mode on">MME</div>
+      </div>
+      <div class="d-top">
+        <div class="d-rec">● REC</div>
+        <div class="d-time">02:14</div>
+        <div class="d-meters">
+          <div class="d-meter"><i style="height:70%"></i></div>
+          <div class="d-meter"><i style="height:55%"></i></div>
+        </div>
+      </div>
+      <div class="d-row"><span>Ganancia envío</span><span>+2.0 dB</span></div>
+      <div class="d-slider"><i></i></div>
+      <div class="d-monitor">
+        <span class="active">Original</span>
+        <span>Transmisión</span>
+        <span>Mute</span>
+      </div>
+    </div>
+    <div class="device-caption">Interfaz real del plugin, modo MME transmitiendo en vivo.</div>
+  </div>
+</section>
+
+<section class="section" id="que-hace">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="node" style="top:calc(var(--o, 0px));"></div>
+      <div class="section-num">01 / entrada</div>
+      <h2>Qué hace</h2>
+    </div>
+    <p class="prose">
+      Recorder es un efecto que insertás en cualquier canal o bus de tu
+      DAW. No reemplaza el bounce de tu proyecto ni es una herramienta de
+      mastering — es un utilitario de ruteo: toma la señal del canal donde
+      vive y la copia hacia otro destino, sin alterar en ningún momento lo
+      que sale por tus parlantes.
+    </p>
+    <p class="prose">
+      Ese destino puede ser un archivo WAV en disco, o un dispositivo de
+      audio virtual en tiempo real, para que aplicaciones como OBS lo
+      reciban como si fuera una entrada de audio del sistema.
+    </p>
+  </div>
+</section>
+
+<section class="section" id="como-se-usa">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="section-num">02 / ruteo</div>
+      <h2>Cómo se usa</h2>
+    </div>
+    <ol class="steps">
+      <li>
+        <span class="n">1</span>
+        <div>
+          <h3>Insertalo en el canal a capturar</h3>
+          <p>Como cualquier efecto VST3, en el canal o bus cuya señal querés sacar.</p>
+        </div>
+      </li>
+      <li>
+        <span class="n">2</span>
+        <div>
+          <h3>Elegí el modo</h3>
+          <p><b style="color:var(--text)">Archivo</b> escribe un WAV en disco. <b style="color:var(--text)">MME</b> transmite en vivo a un dispositivo virtual.</p>
+        </div>
+      </li>
+      <li>
+        <span class="n">3</span>
+        <div>
+          <h3>Apretá REC</h3>
+          <p>El canal sigue sonando normal — el plugin solo copia la señal hacia el destino elegido.</p>
+        </div>
+      </li>
+      <li>
+        <span class="n">4</span>
+        <div>
+          <h3>Ajustá ganancia y monitoreo cuando quieras</h3>
+          <p>Elegí si escuchás el original, lo que se está transmitiendo, o silencio local — sin frenar la transmisión.</p>
+        </div>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<section class="section" id="requisitos">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="section-num">03 / complementos</div>
+      <h2>Qué necesitás</h2>
+    </div>
+    <div class="reqs">
+      <ul>
+        <li><b>Windows 10 / 11, 64-bit</b> — el plugin está compilado exclusivamente para esta arquitectura.</li>
+        <li><b>Un host VST3</b> — Ableton Live u otro DAW compatible con VST3.</li>
+        <li>
+          <b>Para el modo MME:</b> un dispositivo de audio virtual instalado,
+          como <a href="https://vb-audio.com/Cable/" target="_blank" rel="noopener">VB-CABLE</a>
+          (gratis). Sin esto, el modo MME no tiene a dónde mandar la señal — Recorder rutea
+          hacia dispositivos que ya existen, no crea uno nuevo.
+        </li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="descarga">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="section-num">04 / salida</div>
+      <h2>Descargar</h2>
+    </div>
+    <div class="download">
+      <div class="meta">Recorder-win64-vst3.zip · v1.0 · VST3 de 64-bit</div>
+      <div class="download-cta">
+        <a class="btn btn-primary" href="./downloads/Recorder-win64-vst3.zip" download>
+          Descargar plugin (.vst3)
+        </a>
+        <a class="btn btn-ghost" href="./downloads/RecorderVST3-source.zip" download>
+          Código fuente (JUCE / CMake)
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="build">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="section-num">05 / referencia</div>
+      <h2>Compilar desde el código</h2>
+    </div>
+    <p class="prose">
+      El proyecto está escrito en C++ sobre <a href="https://juce.com" target="_blank" rel="noopener" style="text-decoration:underline; text-underline-offset:2px;">JUCE</a>,
+      con CMake como sistema de build. Requiere Visual Studio 2022+ con el
+      workload de desarrollo para escritorio con C++, y Git instalado.
+    </p>
+    <p class="prose">Instrucciones completas de compilación en el <code>README.md</code> del código fuente.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap" style="display:flex; justify-content:space-between; width:100%; flex-wrap:wrap; gap:8px;">
+    <span>Recorder — utilitario de señal, no de mastering.</span>
+    <span><a href="#top">volver arriba</a></span>
+  </div>
+</footer>
+
+<script>
+  // Un único momento de movimiento: la señal recorre la espina vertical
+  // a medida que se hace scroll, como una señal viajando por la cadena.
+  const fill = document.getElementById('spineFill');
+  function updateSpine(){
+    const doc = document.documentElement;
+    const scrollTop = doc.scrollTop || document.body.scrollTop;
+    const scrollHeight = (doc.scrollHeight || document.body.scrollHeight) - doc.clientHeight;
+    const pct = scrollHeight > 0 ? Math.min(100, (scrollTop / scrollHeight) * 100) : 0;
+    if (fill) fill.style.height = pct + '%';
+  }
+  document.addEventListener('scroll', updateSpine, { passive: true });
+  updateSpine();
+</script>
+
+</body>
+</html>
